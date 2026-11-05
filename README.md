@@ -20,7 +20,7 @@ Web application written in Python (version 3.13) with FastHTML.
    TEMP_FOLDER=
    ```
    _Note: You may want to keep the original .env_template files for Git update compatibility._
-4. Copy the karyoke executable file to the folder KaryoKE/executable/ 
+4. Copy the karyoke executable file to the folder KaryoKE/executable/\
 _Note: A symlink won't work. This is a limitation of the Python package subprocess._
 5. Run the web application.
      ```bash
