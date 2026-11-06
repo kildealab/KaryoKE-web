@@ -18,6 +18,7 @@ Web application written in Python (version 3.13) with FastHTML.
    cp .env.example .env
    # Edit .env and set:
    TEMP_FOLDER=
+   PORT=
    ```
    _Note: You may want to keep the original .env_template files for Git update compatibility._
 4. Copy the karyoke executable file to the folder KaryoKE/executable/\

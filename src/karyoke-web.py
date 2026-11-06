@@ -4,6 +4,7 @@ from uuid import uuid4
 from app.helpers import prepare_temp_folder
 from KaryoKE.karyoke import run_karyoke
 
+from app.config import PORT
 
 app,rt = fast_app()
 
@@ -88,4 +89,6 @@ async def run(session, file_data: UploadFile, input_file_type:str):  # , output_
     )
 
 
-serve()
+if __name__ == "__main__":
+    # 2. Change the port using the port parameter here
+    serve(port=PORT)
