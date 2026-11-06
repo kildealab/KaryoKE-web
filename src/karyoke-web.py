@@ -1,200 +1,170 @@
-"""KaryoKE website (FastHTML): paste or upload SDD/SDR data and get the karyogram viewer back.
+"""KaryoKE website: upload or paste SDD/SDR data, then open the karyogram viewer or download the summary file.
 
-The server runs the normal karyoke executable on each request:
-    ./karyoke --sdd|--sdr <file> [-kh|-ko] <job folder>
-On a server there is no screen, so karyoke does not try to open a browser and instead writes the viewer to
-<job folder>/temp/<name>_karyograms_<human|other>.html. This script sends that page back and deletes the job folder.
-
-Run for testing:     KARYOKE_PATH=/path/to/karyoke uvicorn app:app --port 5001
-Run on the server:   see README.md (gunicorn with uvicorn workers, behind nginx, or the Dockerfile).
+Local testing:  python main.py                       (then open http://localhost:5001)
+On the server:  gunicorn -k uvicorn_worker.UvicornWorker main:app   (see DEPLOY.md)
 """
 
 import asyncio
-import os
-import re
 import secrets
-import subprocess
-import tempfile
-from pathlib import Path
 
 from fasthtml.common import *
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import FileResponse
 
-
-
-# ------------------------------------------
-# Settings (environment variables, so nothing in this file has to change between machines)
-# ------------------------------------------
-BASE_DIR = Path(__file__).resolve().parent
-KARYOKE_PATH = os.environ.get("KARYOKE_PATH", str(BASE_DIR / "KaryoKE" / "executable" / "karyoke"))
-MAX_INPUT_MB = int(os.environ.get("KARYOKE_MAX_INPUT_MB", "50"))        # Largest paste or upload accepted
-TIMEOUT_SECONDS = int(os.environ.get("KARYOKE_TIMEOUT_SECONDS", "300"))  # A run taking longer than this is stopped
-MAX_JOBS = int(os.environ.get("KARYOKE_MAX_JOBS", "2"))                 # Runs at the same time per gunicorn worker
+from app.config import BASE_DIR, KEEP_MINUTES, MAX_INPUT_MB, MAX_JOBS, PORT, SECRET_KEY
+from app.helpers import get_html_file, get_summary, get_user_folder, prepare_temp_folder, safe_filename
+from KaryoKE.karyoke import run_karyoke
 
 MAX_INPUT_BYTES = MAX_INPUT_MB * 1024 * 1024
 
-# pico=False: our own small stylesheet instead of FastHTML's default Pico CSS.
-# static_path: only files in static/ are served (by default FastHTML would serve files from the app folder itself).
-# secret_key: FastHTML sets up sessions, which this site does not use; this stops it writing a .sesskey file.
+# static_path: only files in static/ are served (FastHTML's default would serve files from the project folder itself).
+# secret_key: FastHTML would otherwise write a .sesskey file into the working folder, which fails if the server's
+# user may not write there. The site does not use sessions, so a random key per start is fine unless .env sets one.
 app, rt = fast_app(
-    pico=False,
     static_path=str(BASE_DIR / "static"),
-    secret_key=os.environ.get("KARYOKE_SECRET_KEY", secrets.token_hex(32)),
+    secret_key=SECRET_KEY or secrets.token_hex(32),
     hdrs=(Link(rel="stylesheet", href="/style.css"),),
 )
 
 job_slots = asyncio.Semaphore(MAX_JOBS)
 
 
-class KaryokeError(Exception):
-    """A run that failed; message is shown to the user, details is karyoke's own terminal output."""
-
-    def __init__(self, message, details="", status=422):
-        super().__init__(message)
-        self.message = message
-        self.details = details
-        self.status = status
-
-
 # ------------------------------------------
-# Pages
+# Input page
 # ------------------------------------------
-@rt("/")
+def choice(name, value, text, checked=False):
+    return Label(Input(type="radio", name=name, value=value, checked=checked), text)
+
+
+@rt('/', methods=['GET'])
 def get():
-    """The input page: file type, genome, a file drop area and a paste box."""
-    def choice(name, value, text, checked=False):
-        return Label(Input(type="radio", name=name, value=value, checked=checked), " ", text)
-
-    return (
-        Title("KaryoKE karyograms"),
-        Main(
-            H1("KaryoKE karyograms"),
-            P(f"Paste SDD or SDR data, or drop a file, to see one karyogram per cell. Limit: {MAX_INPUT_MB} MB.", cls="lead"),
-            # target="_blank": the viewer opens in a new tab, so the data stays here for another try (e.g. the other genome).
-            Form(
+    return Titled(
+        "KaryoKE karyograms",
+        P("Upload or paste SDD or SDR data to see one karyogram per cell, and download the summary file. "
+          f"Limit: {MAX_INPUT_MB} MB.", cls="lead"),
+        Form(hx_post="/run", hx_target="#result", hx_disabled_elt="find button", hx_indicator="#busy")(
+            Div(
                 Fieldset(Legend("File type"),
-                         choice("file_type", "sdr", "SDR (mutations)", checked=True),
-                         choice("file_type", "sdd", "SDD (DNA damage)")),
+                         choice("input_file_type", "sdr", "SDR (mutations)", checked=True),
+                         choice("input_file_type", "sdd", "SDD (DNA damage)")),
                 Fieldset(Legend("Genome"),
                          choice("genome", "human", "Human (realistic centromere positions)", checked=True),
                          choice("genome", "other", "Other (generic centromere positions)")),
-                Fieldset(Legend("Data"),
-                         Div("Drop an SDD/SDR file here, or ", Input(type="file", name="data_file", id="file"), id="drop"),
-                         Textarea(name="data_text", id="text", placeholder="...or paste the file contents here"),
-                         Small("A chosen file is used instead of the text box.")),
-                Div(Button("Draw karyograms", type="submit", name="action", value="viewer"),
-                    Button("Download summary file", type="submit", name="action", value="summary"),
-                    cls="buttons"),
-                method="post", action="/draw", enctype="multipart/form-data", target="_blank",
+                cls="grid",
             ),
+            Fieldset(
+                Legend("Data"),
+                Div("Drop an SDD/SDR file here, or ",
+                    Input(type="file", name="file_data", id="file", accept=".txt,.sdd,.sdr"), id="drop"),
+                Textarea(name="data_text", id="text", rows=10, placeholder="...or paste the file contents here"),
+                Small("A chosen file is used instead of the text box."),
+            ),
+            Button("Draw karyograms", type="submit"),
+            Span("Drawing karyograms...", id="busy", cls="htmx-indicator", aria_busy="true"),
         ),
+        Div(id="result"),
         Script(src="/input.js"),
     )
 
 
-@rt("/draw")
-async def post(req: Request):
-    """Runs karyoke on the submitted data. action=viewer returns the karyogram viewer, action=summary the summary file."""
+# ------------------------------------------
+# Running karyoke
+# ------------------------------------------
+@rt('/run', methods=['POST'])
+async def run(req):
+    """Runs karyoke on the uploaded or pasted data and returns the result box shown under the form."""
     if int(req.headers.get("content-length", "0")) > MAX_INPUT_BYTES:
-        return error_page(f"The data is larger than the {MAX_INPUT_MB} MB limit of this website. "
-                          "Use the karyoke program on your own computer for files this big.", status=413)
+        return error_box(f"The data is larger than the {MAX_INPUT_MB} MB limit of this website. "
+                         "Use the karyoke program on your own computer for files this big.")
 
-    form = await req.form(max_part_size=MAX_INPUT_BYTES)       # Starlette's default limit for the paste box is only 1 MB
-    file_type = form.get("file_type")                           # "sdd" or "sdr"
-    genome = form.get("genome")                                 # "human" or "other"
-    action = form.get("action", "viewer")
+    form = await req.form(max_part_size=MAX_INPUT_BYTES)       # The default limit for the paste box is only 1 MB
+    input_file_type = form.get("input_file_type")
+    genome = form.get("genome")
 
-    if file_type not in ("sdd", "sdr") or genome not in ("human", "other") or action not in ("viewer", "summary"):
-        return error_page("Please choose the file type and the genome.", status=400)
+    if input_file_type not in ("sdd", "sdr") or genome not in ("human", "other"):
+        return error_box("Please choose the file type and the genome.")
 
-    data, name = await read_input(form)
+    upload = form.get("file_data")
+    if upload is not None and getattr(upload, "filename", ""):    # An uploaded file wins over the text box
+        name = safe_filename(upload.filename, default="uploaded")
+        data = await upload.read()
+    else:
+        name = "pasted"
+        data = form.get("data_text", "").encode("utf-8")
+
     if not data.strip():
-        return error_page("No data given. Paste SDD/SDR data into the box or choose a file.", status=400)
+        return error_box("No data given. Choose a file or paste SDD/SDR data into the box.")
 
     if job_slots.locked():                                      # Safeguard: a few big files at once could exhaust the server
-        return error_page("The server is busy drawing other karyograms. Please try again in a minute.", status=503)
+        return error_box("The server is busy drawing other karyograms. Please try again in a minute.")
 
     async with job_slots:
-        try:
-            # karyoke runs in a separate thread, so other visitors' pages keep loading while it draws.
-            body = await asyncio.to_thread(run_karyoke, data, name, file_type, genome, action == "viewer")
-        except KaryokeError as error:
-            return error_page(error.message, error.details, status=error.status)
+        job_id, folder = prepare_temp_folder()
+        file_path = folder / f"{name}.txt"
+        file_path.write_bytes(data.replace(b"\r\n", b"\n"))       # Pasted text from Windows browsers uses CRLF
+        # karyoke runs in a separate thread, so the site keeps answering other visitors while it draws.
+        success, error = await asyncio.to_thread(run_karyoke, file_path=file_path, input_file_type=input_file_type,
+                                                 user_folder=folder, genome=genome)
 
-    if action == "summary":
-        return Response(body, media_type="text/plain",
-                        headers={"Content-Disposition": f'attachment; filename="{name}_summary.txt"'})
+    if not success:
+        return error_box("KaryoKE could not process this data. Its messages are below.", error)
 
-    return Response(body, media_type="text/html",
-                    headers={"Content-Disposition": f'inline; filename="{name}_karyograms_{genome}.html"'})
+    found_html, html_error = get_html_file(folder)
+    if not found_html:
+        return error_box(f"KaryoKE finished but the karyogram viewer is missing ({html_error}), "
+                         "for example because no cell has data.")
+    found_summary, _ = get_summary(folder)
 
-
-# ------------------------------------------
-# Helpers
-# ------------------------------------------
-async def read_input(form):
-    """Returns (text, name). An uploaded file wins over the text box; the name is used for the viewer title and downloads."""
-    upload = form.get("data_file")
-
-    if upload is not None and getattr(upload, "filename", ""):
-        name = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(upload.filename).stem).strip("._") or "uploaded"   # Safe as a file name
-        return (await upload.read()).decode("utf-8", errors="replace"), name
-
-    return form.get("data_text", ""), "pasted"
-
-
-def run_karyoke(data, name, file_type, genome, draw):
-    """Runs karyoke on the data in a temporary job folder and returns the viewer (or summary) it wrote, as bytes."""
-    with tempfile.TemporaryDirectory(prefix="karyoke-") as folder:
-        job = Path(folder)
-        input_path = job / f"{name}.txt"
-        input_path.write_text(data.replace("\r\n", "\n"), encoding="utf-8")   # Pasted text from Windows browsers uses CRLF
-
-        # Argument order is fixed by karyoke: --sdd|--sdr <file> [-kh|-ko] [output directory last].
-        command = [KARYOKE_PATH, f"--{file_type}", str(input_path)]
-        if draw:
-            command.append("-kh" if genome == "human" else "-ko")
-        command.append(str(job))
-
-        # No DISPLAY/WAYLAND_DISPLAY: karyoke then never tries to open a browser on the server.
-        environment = {key: value for key, value in os.environ.items() if key not in ("DISPLAY", "WAYLAND_DISPLAY")}
-
-        try:
-            result = subprocess.run(command, cwd=job, env=environment, capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
-            raise KaryokeError(f"Drawing took longer than {TIMEOUT_SECONDS} seconds and was stopped. "
-                               "Try fewer cells, or use the karyoke program on your own computer.")
-        except OSError as error:                                # e.g. KARYOKE_PATH is wrong: a server setup problem, not the user's
-            print(f"Could not start karyoke at {KARYOKE_PATH}: {error}", flush=True)
-            raise KaryokeError("The website could not start KaryoKE. Please tell the site's maintainer.", status=500)
-
-        terminal_output = (result.stdout + result.stderr).replace(f"{job}/", "").strip()   # Hide the server's temp folder from users
-
-        output = (job / "temp" / f"{name}_karyograms_{genome}.html") if draw else (job / f"{name}_summary.txt")
-        if not output.is_file() and draw:
-            output = job / f"{name}_karyograms_{genome}.html"   # karyoke falls back to the output folder if it cannot create temp/
-
-        if result.returncode != 0 or not output.is_file():
-            raise KaryokeError("KaryoKE could not process this data. Its messages are below.", terminal_output)
-
-        return output.read_bytes()                              # Read now: the job folder is deleted when this block ends
-
-
-def error_page(message, details="", status=400):
-    # A full page built by hand, because FastHTML's automatic page wrapping always answers with status 200.
-    page = Html(
-        Head(Meta(charset="utf-8"), Meta(name="viewport", content="width=device-width, initial-scale=1"),
-             Title("KaryoKE: could not draw"), Link(rel="stylesheet", href="/style.css")),
-        Body(Main(
-            H1("Could not draw the karyograms", cls="error"),
-            P(message),
-            Pre(details) if details else "",
-            P(A("Back", href="/")),
-        )),
+    return Article(
+        Header(Strong("Karyograms ready")),
+        Div(
+            A("Open karyogram viewer", href=f"/jobs/{job_id}/viewer", target="_blank", role="button"),
+            A("Download summary file", href=f"/jobs/{job_id}/summary", role="button", cls="secondary outline")
+            if found_summary else "",
+            cls="actions",
+        ),
+        Footer(Small(f"The viewer opens in a new tab and has its own PNG/SVG downloads. "
+                     f"These results are deleted from the server after {KEEP_MINUTES} minutes.")),
     )
-    return Response("<!doctype html>\n" + to_xml(page), media_type="text/html", status_code=status)
 
 
+# ------------------------------------------
+# Results of a run
+# ------------------------------------------
+@rt('/jobs/{job_id}/viewer', methods=['GET'])
+def viewer(job_id: str):
+    folder = get_user_folder(job_id)
+    found, viewer_path = get_html_file(folder) if folder else (False, None)
+    if not found:
+        return expired_page()
+    return FileResponse(viewer_path, media_type="text/html")
 
-serve()
+
+@rt('/jobs/{job_id}/summary', methods=['GET'])
+def summary(job_id: str):
+    folder = get_user_folder(job_id)
+    found, summary_path = get_summary(folder) if folder else (False, None)
+    if not found:
+        return expired_page()
+    return FileResponse(summary_path, media_type="text/plain", filename=summary_path.name)
+
+
+# ------------------------------------------
+# Messages
+# ------------------------------------------
+def error_box(message, details=""):
+    # Status 200 on purpose: htmx only shows answers with a success status.
+    return Article(
+        Header(Strong("Could not draw the karyograms"), cls="error"),
+        P(message),
+        Pre(details) if details else "",
+    )
+
+
+def expired_page():
+    return Titled("Results no longer available",
+                  P(f"Results are kept for {KEEP_MINUTES} minutes. Please run your data again."),
+                  A("Back to KaryoKE", href="/", role="button"))
+
+
+if __name__ == "__main__":
+    serve(port=PORT)

@@ -6,6 +6,9 @@ dist/
 wheels/
 *.egg-info
 
+# Old website formatting code
+karyoke-web_old.py
+
 # Virtual environments
 .venv
 .env
