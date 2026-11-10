@@ -1,0 +1,12 @@
+[Unit]
+Description=KaryoKE website
+After=network.target
+
+[Service]
+User=samyb
+WorkingDirectory=/data/public_html/KaryoKE-web
+ExecStart=/data/public_html/KaryoKE-web/.venv/bin/gunicorn --chdir /data/public_html/KaryoKE-web/src -k uvicorn_worker.UvicornWorker --bind 127.0.0.1:5001 --workers 2 --timeout 330 main:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

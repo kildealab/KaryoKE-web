@@ -6,8 +6,8 @@ dist/
 wheels/
 *.egg-info
 
-# Old website formatting code
-karyoke-web_old.py
+# KaryoKE executable - must be built on the user's machine
+karyoke
 
 # Virtual environments
 .venv

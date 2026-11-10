@@ -1,0 +1,19 @@
+server {
+    listen 8086;
+    server_name  198.168.184.43;
+
+    access_log /data/logs/KaryoKE-web/logs.txt;
+    error_log /data/logs/KaryoKE-web/error_log.txt info;
+
+    client_max_body_size 50m;     # uploads up to 50 MB (nginx's default would reject anything over 1 MB)
+    proxy_read_timeout 330s;      # big files can take minutes to draw (default would cut off at 60 s)
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location / {
+        include proxy_params;
+        proxy_pass http://127.0.0.1:5001;
+    }
+    location ~ /\. {
+        deny all;
+    }
+}
