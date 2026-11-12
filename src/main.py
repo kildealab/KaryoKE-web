@@ -6,6 +6,7 @@ On the server:  gunicorn -k uvicorn_worker.UvicornWorker main:app   (see DEPLOY.
 
 import asyncio
 import secrets
+from datetime import date
 
 from fasthtml.common import *
 from starlette.responses import FileResponse
@@ -15,6 +16,23 @@ from app.helpers import get_html_file, get_summary, get_user_folder, prepare_tem
 from KaryoKE.karyoke import run_karyoke
 
 MAX_INPUT_BYTES = MAX_INPUT_MB * 1024 * 1024
+
+# Shown under the title and at the bottom of the page.
+AUTHOR = "Samy Boutros"
+EMAIL = "samy.boutros@mail.mcgill.ca"
+GITHUB_URL = "https://github.com/samyb-23"
+LINKEDIN_URL = "https://www.linkedin.com/in/boutros01"
+
+
+def last_updated():
+    """Date of the newest website file. A git pull touches only the files that changed, so this is the date of the
+    last update on the server, with nothing to remember to edit by hand."""
+    files = [BASE_DIR / "main.py", *(BASE_DIR / "app").glob("*.py"), *(BASE_DIR / "static").iterdir()]
+    newest = max(f.stat().st_mtime for f in files if f.is_file())
+    return date.fromtimestamp(newest).strftime("%B %-d, %Y")       # e.g. November 12, 2026
+
+
+LAST_UPDATED = last_updated()                                       # Worked out once, when the site starts
 
 # static_path: only files in static/ are served (FastHTML's default would serve files from the project folder itself).
 # secret_key: FastHTML would otherwise write a .sesskey file into the working folder, which fails if the server's
@@ -37,10 +55,19 @@ def choice(name, value, text, checked=False):
 
 @rt('/', methods=['GET'])
 def get():
-    return Titled(
-        "KaryoKE karyograms",
-        P("Upload or paste SDD or SDR data to see one karyogram per cell, and download the summary file. "
-          f"Limit: {MAX_INPUT_MB} MB.", cls="lead"),
+    # The logo is the page heading: it already says "KaryoKE" and "Karyograms for Karyotype Errors". The alt text
+    # gives the same words to screen readers and search engines, and the tab title keeps the full name.
+    return Title("KaryoKE - Karyograms for Karyotype Errors"), Main(
+        Header(
+            Div(
+                H1("KaryoKE", Small("Karyograms for Karyotype Errors")),
+                P(f"By {AUTHOR}", Br(), f"Last updated {LAST_UPDATED}", cls="byline"),
+            ),
+            Img(src="/KaryoKE_logo.svg", alt="KaryoKE logo", width="500"),
+            cls="site-header",
+        ),
+        P("Upload or paste Standard for DNA Damage (SDD) or Standard for DNA Repair (SDR) data to see one karyogram "
+          f"per cell, and download the summary file. Limit: {MAX_INPUT_MB} MB.", cls="lead"),
         Form(hx_post="/run", hx_target="#result", hx_disabled_elt="find button", hx_indicator="#busy")(
             Div(
                 Fieldset(Legend("File type"),
@@ -58,11 +85,18 @@ def get():
                 Textarea(name="data_text", id="text", rows=10, placeholder="...or paste the file contents here"),
                 Small("A chosen file is used instead of the text box."),
             ),
-            Button("Draw karyograms", type="submit"),
+            Button("Submit", type="submit"),
             Span("Drawing karyograms...", id="busy", cls="htmx-indicator", aria_busy="true"),
         ),
         Div(id="result"),
+        Footer(
+            A("Email", href=f"mailto:{EMAIL}"),
+            A("GitHub", href=GITHUB_URL, target="_blank", rel="noopener"),
+            A("LinkedIn", href=LINKEDIN_URL, target="_blank", rel="noopener"),
+            cls="site-footer",
+        ),
         Script(src="/input.js"),
+        cls="container",
     )
 
 
