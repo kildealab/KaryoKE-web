@@ -48,3 +48,24 @@ main form textarea { text-align: left; }
 #result article { text-align: center; }
 #result .actions { justify-content: center; }
 #result pre { text-align: left; }
+
+/* The two sections of the page: "How to use" and "Input SDD or SDR files". Headings centred like the rest;
+   the guide's own text stays left-aligned for reading, in a centred column as wide as the form. */
+main > section { margin-top: 2.5rem; }
+main > section > h2 { text-align: center; font-size: 2rem; padding-bottom: 0.5rem;
+                      border-bottom: 1px solid var(--pico-muted-border-color); }
+.guide { max-width: 52rem; margin: 0 auto; }
+.guide h3 { font-size: 1.25rem; margin-top: 1.75rem; }
+.guide img { max-width: 100%; border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); }
+
+/* Collapsible "How to use": the heading looks like the other section headings, with a
+   "Show instructions" / "Hide instructions" hint under it instead of Pico's arrow at the far right */
+#how-to-use details { border-bottom: 1px solid var(--pico-muted-border-color); padding-bottom: 0.5rem; margin: 0; }
+#how-to-use summary { text-align: center; }
+#how-to-use summary::after { display: none; }
+#how-to-use summary h2 { display: inline; font-size: 2rem; margin: 0; }
+#how-to-use summary .hint { display: block; font-size: 0.9rem; color: var(--pico-primary); }
+#how-to-use summary .hint::before { content: "Show instructions \25BE"; }
+#how-to-use details[open] summary .hint::before { content: "Hide instructions \25B4"; }
+#how-to-use summary:hover .hint { text-decoration: underline; }
+#how-to-use .guide { padding-top: 1rem; }

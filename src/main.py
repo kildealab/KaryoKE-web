@@ -19,15 +19,16 @@ MAX_INPUT_BYTES = MAX_INPUT_MB * 1024 * 1024
 
 # Shown under the title and at the bottom of the page.
 AUTHOR = "Samy Boutros"
-EMAIL = "samy.boutros@mail.mcgill.ca"
-GITHUB_URL = "https://github.com/samyb-23"
-LINKEDIN_URL = "https://www.linkedin.com/in/boutros01"
+LAB_NAME = "Kildea Lab"
+LAB_URL = "https://kildealab.com"
+GITHUB_URL = "https://github.com/kildealab/KaryoKE"
+GUIDE_FILE = BASE_DIR / "guide.md"                 # The "How to use" section, written in Markdown
 
 
 def last_updated():
     """Date of the newest website file. A git pull touches only the files that changed, so this is the date of the
     last update on the server, with nothing to remember to edit by hand."""
-    files = [BASE_DIR / "main.py", *(BASE_DIR / "app").glob("*.py"), *(BASE_DIR / "static").iterdir()]
+    files = [BASE_DIR / "main.py", GUIDE_FILE, *(BASE_DIR / "app").glob("*.py"), *(BASE_DIR / "static").iterdir()]
     newest = max(f.stat().st_mtime for f in files if f.is_file())
     return date.fromtimestamp(newest).strftime("%B %-d, %Y")       # e.g. November 12, 2026
 
@@ -55,48 +56,66 @@ def choice(name, value, text, checked=False):
 
 @rt('/', methods=['GET'])
 def get():
-    # The logo is the page heading: it already says "KaryoKE" and "Karyograms for Karyotype Errors". The alt text
-    # gives the same words to screen readers and search engines, and the tab title keeps the full name.
-    return Title("KaryoKE - Karyograms for Karyotype Errors"), Main(
+    # guide.md is plain Markdown: edit it like a README. The browser turns it into formatted text (MarkdownJS),
+    # so no extra Python package is needed. The file is read on every visit, so an edit shows at once.
+    guide_text = GUIDE_FILE.read_text(encoding="utf-8") if GUIDE_FILE.is_file() else "The guide is not written yet."
+    return Title("KaryoKE - Karyograms for Karyotype Errors"), MarkdownJS(), Main(
         Header(
             Div(
                 H1("KaryoKE", Small("Karyograms for Karyotype Errors")),
-                P(f"By {AUTHOR}", Br(), f"Last updated {LAST_UPDATED}", cls="byline"),
+                P(f"By {AUTHOR}, ", A(LAB_NAME, href=LAB_URL, target="_blank", rel="noopener"), Br(),
+                  f"Last updated {LAST_UPDATED}", cls="byline"),
             ),
             Img(src="/KaryoKE_logo.svg", alt="KaryoKE logo", width="500"),
             cls="site-header",
         ),
-        P("Upload or paste Standard for DNA Damage (SDD) or Standard for DNA Repair (SDR) data to see one karyogram "
-          f"per cell, and download the summary file. Limit: {MAX_INPUT_MB} MB.", cls="lead"),
-        Form(hx_post="/run", hx_target="#result", hx_disabled_elt="find button", hx_indicator="#busy")(
-            Div(
-                Fieldset(Legend("File type"),
-                         choice("input_file_type", "sdr", "SDR (mutations)", checked=True),
-                         choice("input_file_type", "sdd", "SDD (DNA damage)")),
-                Fieldset(Legend("Genome"),
-                         choice("genome", "human", "Human (realistic centromere positions)", checked=True),
-                         choice("genome", "other", "Other (generic centromere positions)")),
-                cls="grid",
+        # Collapsible: closed when the page opens, so the form stays near the top. Click the heading to open it.
+        # Add open=True to Details(...) to have it open by default instead.
+        Section(
+            Details(
+                Summary(H2("How to use"), Span(cls="hint")),          # The hint text is set in style.css
+                Div(guide_text, cls="marked guide"),
             ),
-            Fieldset(
-                Legend("Data"),
-                Div("Drop an SDD/SDR file here, or ",
-                    Input(type="file", name="file_data", id="file", accept=".txt,.sdd,.sdr"), id="drop"),
-                Textarea(name="data_text", id="text", rows=10, placeholder="...or paste the file contents here"),
-                Small("A chosen file is used instead of the text box."),
+            id="how-to-use",
+        ),
+        Section(
+            H2("Input SDD or SDR files"),
+            P("Upload or paste Standard for DNA Damage (SDD) or Standard for DNA Repair (SDR) data to see one karyogram "
+              f"per cell, and download the summary file. Limit: {MAX_INPUT_MB} MB.", cls="lead"),
+            Form(hx_post="/run", hx_target="#result", hx_disabled_elt="find button", hx_indicator="#busy")(
+                Div(
+                    Fieldset(Legend("File type"),
+                             choice("input_file_type", "sdr", "SDR (mutations)", checked=True),
+                             choice("input_file_type", "sdd", "SDD (DNA damage)")),
+                    Fieldset(Legend("Genome"),
+                             choice("genome", "human", "Human (realistic centromere positions)", checked=True),
+                             choice("genome", "other", "Other (generic centromere positions)")),
+                    cls="grid",
+                ),
+                Fieldset(
+                    Legend("Data"),
+                    Div("Drop an SDD/SDR file here, or ",
+                        Input(type="file", name="file_data", id="file", accept=".txt,.sdd,.sdr"), id="drop"),
+                    Textarea(name="data_text", id="text", rows=10, placeholder="...or paste the file contents here"),
+                    Small("A chosen file is used instead of the text box."),
+                ),
+                Button("Draw karyograms", type="submit"),
+                Span("Drawing karyograms...", id="busy", cls="htmx-indicator", aria_busy="true"),
             ),
-            Button("Submit", type="submit"),
-            Span("Drawing karyograms...", id="busy", cls="htmx-indicator", aria_busy="true"),
+            Div(id="result"),
+            id="input",
         ),
-        Div(id="result"),
-        Footer(
-            A("Email", href=f"mailto:{EMAIL}"),
-            A("GitHub", href=GITHUB_URL, target="_blank", rel="noopener"),
-            A("LinkedIn", href=LINKEDIN_URL, target="_blank", rel="noopener"),
-            cls="site-footer",
-        ),
+        site_footer(),
         Script(src="/input.js"),
         cls="container",
+    )
+
+
+def site_footer():
+    """Links at the bottom of the page."""
+    return Footer(
+        A("GitHub", href=GITHUB_URL, target="_blank", rel="noopener"),
+        cls="site-footer",
     )
 
 
