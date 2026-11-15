@@ -9,6 +9,13 @@ server {
     proxy_read_timeout 330s;      # big files can take minutes to draw (default would cut off at 60 s)
 
     location = /favicon.ico { access_log off; log_not_found off; }
+
+    location ~ ^/(KaryoKE_logo\.svg|style\.css|input\.js)$
+    {
+    root /data/public_html/KaryoKE-web/src/static;
+    expires 1h;
+    }
+
     location / {
         include proxy_params;
         proxy_pass http://127.0.0.1:5001;

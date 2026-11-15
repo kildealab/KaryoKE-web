@@ -10,6 +10,8 @@ maintainer; people using the website never run any of this, they just open its l
 - Service: `/etc/systemd/system/karyoke-web.service`, gunicorn `--chdir src` on `127.0.0.1:5001`.
 - nginx: `/etc/nginx/sites-available/KaryoKE-web`, listens on 8086 and forwards to 5001;
   logs in `/data/logs/KaryoKE-web/`. Modelled on the mCODEBrowser site on the same VPS.
+- nginx sends the files in `src/static/` (logo, style.css, input.js) itself, straight from disk; only the
+  pages and karyoke runs go to gunicorn. See "Static files" under step 3.
 - Later: switch to a unix socket and `www-data` like mCODEBrowser; once kildealab.com points to
   the VPS, add the domain and HTTPS (steps 5 and 6).
 - After code changes: `git pull`, `uv sync`, `sudo systemctl restart karyoke-web`.
@@ -141,6 +143,22 @@ sudo systemctl reload nginx
 curl -I http://localhost                     # HTTP/1.1 200 OK, now through nginx
 ```
 
+### Static files (logo, style.css, input.js)
+
+nginx can send these straight from disk, which is faster and keeps the Python workers free for karyoke
+runs. Add this inside the `server { ... }` block, above `location /`, with the real path to `static/`:
+
+```nginx
+    location ~ ^/(KaryoKE_logo\.svg|style\.css|input\.js)$ {
+        root /data/public_html/KaryoKE-web/src/static;
+        expires 1h;
+    }
+```
+
+`sudo nginx -t && sudo systemctl reload nginx`, then `curl -I http://localhost:8086/style.css` should show
+`Cache-Control: max-age=3600` (only nginx adds it). A new file in `static/` needs its name added to that line;
+`python main.py` on your own computer still serves them without nginx.
+
 ## Step 4. Open the VM to the internet (Alliance cloud dashboard)
 
 In the OpenStack dashboard of your cloud project (for example Arbutus):
@@ -181,7 +199,7 @@ to the nginx file and renews it automatically. The public link is now
 
 ## Settings
 
-In `.env` (see `.env.example`); `sudo systemctl restart karyoke-web` after a change:
+In `.env` (see `.env_template`); `sudo systemctl restart karyoke-web` after a change:
 
 | Setting | Default | Meaning |
 |---|---|---|
