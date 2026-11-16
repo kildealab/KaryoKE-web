@@ -23,3 +23,15 @@ function guessFromText(text) {
   const type = /\*\*\*\s*subheader/i.test(text) ? 'sdr' : 'sdd';
   document.querySelector(`input[name=input_file_type][value=${type}]`).checked = true;
 }
+
+// htmx ignores answers with an error status (for example 500 or 502), so without this the page would show nothing
+// at all when the server fails. Show a short message in the result box instead.
+function showServerError(text) {
+  document.getElementById('result').innerHTML =
+    '<article><header class="error"><strong>Could not draw the karyograms</strong></header><p>' + text + '</p></article>';
+}
+document.body.addEventListener('htmx:responseError', (event) =>
+  showServerError('The server had a problem (error ' + event.detail.xhr.status + '). Please try again later, ' +
+                  'or tell the site maintainer if it keeps happening.'));
+document.body.addEventListener('htmx:sendError', () =>
+  showServerError('Could not reach the server. Check your internet connection and try again.'));

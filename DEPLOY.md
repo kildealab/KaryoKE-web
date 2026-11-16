@@ -3,18 +3,114 @@
 For whoever runs the website on the Compute Canada (Alliance cloud) VM. This is done once by the
 maintainer; people using the website never run any of this, they just open its link.
 
-## Current setup on the lab VPS (working since 2026-11-10)
+## Current setup on the lab VPS
 
 - Public link: **http://198.168.184.43:8086** (no domain yet; the VPS opens ports 8080-8090).
-- Code: `/data/public_html/KaryoKE-web` (main.py in `src/`), packages in its `.venv` (`uv sync`).
-- Service: `/etc/systemd/system/karyoke-web.service`, gunicorn `--chdir src` on `127.0.0.1:5001`.
-- nginx: `/etc/nginx/sites-available/KaryoKE-web`, listens on 8086 and forwards to 5001;
+- Code: `/data/public_html/KaryoKE-web` (main.py in `src/`, settings in `src/.env`), packages in its `.venv`.
+  Owned by `root:www-data`: the site can read its code but not change it.
+- Service: `/etc/systemd/system/karyoke-web.service` runs `python main.py` as `www-data`. With no
+  `DEVELOPMENT=true` in `.env`, main.py starts gunicorn on the unix socket `/run/karyoke-web/karyoke-web.sock`.
+- nginx: `/etc/nginx/sites-available/KaryoKE-web`, listens on 8086 and forwards to that socket;
   logs in `/data/logs/KaryoKE-web/`. Modelled on the mCODEBrowser site on the same VPS.
 - nginx sends the files in `src/static/` (logo, style.css, input.js) itself, straight from disk; only the
   pages and karyoke runs go to gunicorn. See "Static files" under step 3.
-- Later: switch to a unix socket and `www-data` like mCODEBrowser; once kildealab.com points to
-  the VPS, add the domain and HTTPS (steps 5 and 6).
-- After code changes: `git pull`, `uv sync`, `sudo systemctl restart karyoke-web`.
+- After code changes (see "Socket and www-data" below for why sudo):
+  ```bash
+  cd /data/public_html/KaryoKE-web
+  sudo git pull
+  sudo $(which uv) sync --frozen                 # only if pyproject.toml / uv.lock changed
+  sudo chown -R root:www-data .
+  sudo systemctl restart karyoke-web
+  ```
+- Later: once kildealab.com points to the VPS, add the domain and HTTPS (steps 5 and 6).
+
+## Socket and www-data (switching the lab VPS over, 2026-11)
+
+Before: gunicorn on `127.0.0.1:5001`, running as your own user, set in the systemd file.
+After: `python main.py` decides by itself. `DEVELOPMENT=true` in `.env` (your own computer) gives the
+test server on http://localhost:PORT; anything else (the VPS) gives gunicorn on a unix socket that only
+nginx uses. The service runs as `www-data`, the same user as nginx, and the code belongs to `root`.
+
+**1. On your own computer**, copy `main.py`, `app/config.py` and `.env.example` into your repo's `src/`
+(`src/main.py`, `src/app/config.py`, `src/.env.example`). Add `DEVELOPMENT=true` to your own `src/.env`
+and check `python main.py` still opens on http://localhost:5001. Commit and push.
+
+**2. On the VPS**, stop the site and give the folder to root:www-data:
+
+```bash
+sudo systemctl stop karyoke-web
+cd /data/public_html/KaryoKE-web
+sudo chown -R root:www-data .                  # root owns it, the www-data group can read it
+sudo chmod -R u+rwX,g+rX,g-w,o-w .             # www-data may read and run, not change
+sudo git pull                                  # sudo from now on: the folder belongs to root
+grep -i development src/.env                   # must print nothing, or DEVELOPMENT=false
+sudo chmod 640 src/.env                        # .env readable by root and www-data only
+git config --global --add safe.directory /data/public_html/KaryoKE-web   # git status etc. without sudo
+```
+
+**3. The run folder.** Old runs in `TEMP_FOLDER` belong to your user, and www-data could not clean them up.
+Delete the folder; the site makes a new one as www-data on its first run:
+
+```bash
+grep TEMP_FOLDER src/.env                      # default /tmp/karyoke-web if nothing is printed
+sudo rm -rf /tmp/karyoke-web                   # or the folder printed above
+```
+
+**4. Check www-data can run everything:**
+
+```bash
+cd /data/public_html/KaryoKE-web/src
+sudo -u www-data ../.venv/bin/python -c "import fasthtml, gunicorn, uvicorn_worker; print('python ok')"
+sudo -u www-data KaryoKE/executable/karyoke -v
+```
+
+Both must work. If the first says `Permission denied` with a path in your home folder, uv made `.venv`
+with a Python from your home that www-data cannot open; rebuild it with the system Python:
+`cd .. && sudo rm -rf .venv && sudo $(which uv) sync --frozen --python /usr/bin/python3`.
+
+**5. The new service file** (replaces the old one):
+
+```bash
+sudo tee /etc/systemd/system/karyoke-web.service > /dev/null <<'EOF'
+[Unit]
+Description=KaryoKE website
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/data/public_html/KaryoKE-web/src
+ExecStart=/data/public_html/KaryoKE-web/.venv/bin/python main.py
+# Makes /run/karyoke-web, owned by www-data, for the socket
+RuntimeDirectory=karyoke-web
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart karyoke-web
+systemctl status karyoke-web                   # "active (running)"; q to quit
+ls -l /run/karyoke-web/                        # karyoke-web.sock, owned by www-data
+curl -sI --unix-socket /run/karyoke-web/karyoke-web.sock http://localhost/ | head -1   # HTTP/1.1 200 OK
+```
+
+If it is not running, `journalctl -u karyoke-web -n 30` shows why.
+
+**6. Point nginx at the socket.** In `/etc/nginx/sites-available/KaryoKE-web`, change the `proxy_pass` line to:
+
+```nginx
+        proxy_pass http://unix:/run/karyoke-web/karyoke-web.sock;
+```
+
+```bash
+sudo nginx -t                                  # "syntax is ok" and "test is successful"
+sudo systemctl reload nginx
+curl -sI http://localhost:8086 | head -1       # HTTP/1.1 200 OK
+```
+
+Then open http://198.168.184.43:8086, press Ctrl+Shift+R and draw karyograms once to check runs work.
+Copy the new service and nginx files into the repo's `deploy/` folder too.
 
 The steps below are the general recipe; the lab VPS differs where the list above says so.
 
@@ -199,12 +295,15 @@ to the nginx file and renews it automatically. The public link is now
 
 ## Settings
 
-In `.env` (see `.env_template`); `sudo systemctl restart karyoke-web` after a change:
+In `.env` (see `.env.example`); `sudo systemctl restart karyoke-web` after a change:
 
 | Setting | Default | Meaning |
 |---|---|---|
+| `DEVELOPMENT` | false | `true` on your own computer: `python main.py` gives the test server on PORT |
+| `SOCKET_PATH` | `/run/karyoke-web/karyoke-web.sock` | Production only: where gunicorn listens for nginx |
+| `WORKERS` | 2 | Production only: gunicorn worker processes |
 | `TEMP_FOLDER` | `/tmp/karyoke-web` | Where each run gets its folder (must be writable by YOUR_USER) |
-| `PORT` | 5001 | Only for `uv run main.py`; gunicorn uses the `--bind` port |
+| `PORT` | 5001 | Development only: the test server's port |
 | `KEEP_MINUTES` | 60 | How long a run's viewer and summary can be opened |
 | `MAX_INPUT_MB` | 50 | Largest upload or paste (keep nginx's `client_max_body_size` the same) |
 | `TIMEOUT_SECONDS` | 300 | A karyoke run taking longer is stopped |

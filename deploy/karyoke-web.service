@@ -3,9 +3,12 @@ Description=KaryoKE website
 After=network.target
 
 [Service]
-User=samyb
-WorkingDirectory=/data/public_html/KaryoKE-web
-ExecStart=/data/public_html/KaryoKE-web/.venv/bin/gunicorn --chdir /data/public_html/KaryoKE-web/src -k uvicorn_worker.UvicornWorker --bind 127.0.0.1:5001 --workers 2 --timeout 330 main:app
+User=www-data
+Group=www-data
+WorkingDirectory=/data/public_html/KaryoKE-web/src
+ExecStart=/data/public_html/KaryoKE-web/.venv/bin/python main.py
+# Makes /run/karyoke-web, owned by www-data, for the socket
+RuntimeDirectory=karyoke-web
 Restart=always
 
 [Install]
