@@ -11,7 +11,8 @@ from datetime import date
 from fasthtml.common import *
 from starlette.responses import FileResponse
 
-from app.config import BASE_DIR, KEEP_MINUTES, MAX_INPUT_MB, MAX_JOBS, PORT, SECRET_KEY
+from app.config import (BASE_DIR, DEVELOPMENT, KEEP_MINUTES, MAX_INPUT_MB, MAX_JOBS, PORT, SECRET_KEY, SOCKET_PATH,
+                        TIMEOUT_SECONDS, WORKERS)
 from app.helpers import get_html_file, get_summary, get_user_folder, prepare_temp_folder, safe_filename
 from KaryoKE.karyoke import run_karyoke
 
@@ -219,5 +220,40 @@ def expired_page():
                   A("Back to KaryoKE", href="/", role="button"))
 
 
+# ------------------------------------------
+# Starting the site: `python main.py`
+# ------------------------------------------
+def run_production():
+    """gunicorn with uvicorn workers on a unix socket; nginx passes visitors to that socket.
+    The same as `gunicorn -k uvicorn_worker.UvicornWorker --bind unix:SOCKET_PATH ... main:app`, with the
+    settings kept here and in .env instead of in the systemd file."""
+    from gunicorn.app.base import BaseApplication
+
+    options = {
+        "bind": f"unix:{SOCKET_PATH}",
+        "workers": WORKERS,
+        "worker_class": "uvicorn_worker.UvicornWorker",
+        "timeout": TIMEOUT_SECONDS + 30,     # A bit above karyoke's own limit, so its timeout message reaches the user
+        "umask": 0o007,                      # Socket readable/writable by its owner and group (www-data, so nginx)
+        "accesslog": "-",                    # Requests and errors go to the service log (journalctl -u karyoke-web)
+        "errorlog": "-",
+        "control_socket_disable": True,      # gunicorn 26+ would otherwise make a control socket in the user's home
+    }
+
+    class Server(BaseApplication):
+        def load_config(self):
+            for key, value in options.items():
+                if key in self.cfg.settings:     # Skips settings an older gunicorn does not have
+                    self.cfg.set(key, value)
+
+        def load(self):
+            return app
+
+    Server().run()
+
+
 if __name__ == "__main__":
-    serve(port=PORT)
+    if DEVELOPMENT:
+        serve(port=PORT, host="127.0.0.1")   # Test server on http://localhost:PORT, restarts when a file changes
+    else:
+        run_production()

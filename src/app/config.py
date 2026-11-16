@@ -14,3 +14,10 @@ MAX_INPUT_MB = int(config.get('MAX_INPUT_MB', '50'))         # Largest upload or
 TIMEOUT_SECONDS = int(config.get('TIMEOUT_SECONDS', '300'))  # A karyoke run taking longer is stopped
 MAX_JOBS = int(config.get('MAX_JOBS', '2'))                  # karyoke runs at the same time, per gunicorn worker
 SECRET_KEY = config.get('SECRET_KEY')                        # Optional; FastHTML otherwise writes a .sesskey file
+
+# Development (your own computer): `python main.py` starts FastHTML's test server on http://localhost:PORT and
+# reloads when a file changes. Production (the VPS, the default): `python main.py` starts gunicorn on a unix socket
+# that nginx forwards visitors to. Set DEVELOPMENT=true in the .env of your own computer.
+DEVELOPMENT = config.get('DEVELOPMENT', 'false').strip().lower() in ('1', 'true', 'yes')
+SOCKET_PATH = config.get('SOCKET_PATH', '/run/karyoke-web/karyoke-web.sock')    # Production only
+WORKERS = int(config.get('WORKERS', '2'))                    # Production only: gunicorn worker processes
