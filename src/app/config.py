@@ -13,7 +13,7 @@ KEEP_MINUTES = int(config.get('KEEP_MINUTES', '60'))         # A run's viewer an
 MAX_INPUT_MB = int(config.get('MAX_INPUT_MB', '50'))         # Largest upload or paste
 TIMEOUT_SECONDS = int(config.get('TIMEOUT_SECONDS', '300'))  # A karyoke run taking longer is stopped
 MAX_JOBS = int(config.get('MAX_JOBS', '2'))                  # karyoke runs at the same time, per gunicorn worker
-SECRET_KEY = config.get('SECRET_KEY')                        # Optional; FastHTML otherwise writes a .sesskey file
+SECRET_KEY = config.get('SECRET_KEY')                        # Signs the session cookie with the CSRF token; set it on the server
 
 # Development (your own computer): `python main.py` starts FastHTML's test server on http://localhost:PORT and
 # reloads when a file changes. Production (the VPS, the default): `python main.py` starts gunicorn on a unix socket

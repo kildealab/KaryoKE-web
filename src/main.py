@@ -5,6 +5,7 @@ On the server:  gunicorn -k uvicorn_worker.UvicornWorker main:app   (see DEPLOY.
 """
 
 import asyncio
+import json
 import secrets
 from datetime import date
 
@@ -37,11 +38,14 @@ def last_updated():
 LAST_UPDATED = last_updated()                                       # Worked out once, when the site starts
 
 # static_path: only files in static/ are served (FastHTML's default would serve files from the project folder itself).
-# secret_key: FastHTML would otherwise write a .sesskey file into the working folder, which fails if the server's
-# user may not write there. The site does not use sessions, so a random key per start is fine unless .env sets one.
+# secret_key: signs the session cookie that holds the CSRF token (see csrf_token below). Set SECRET_KEY in .env on
+# the server, so the cookie stays valid when the site restarts; without it a random key is made at every start.
+# sess_https_only: on the server the site is https only, so the browser never sends the cookie over plain http.
 app, rt = fast_app(
     static_path=str(BASE_DIR / "static"),
     secret_key=SECRET_KEY or secrets.token_hex(32),
+    sess_https_only=not DEVELOPMENT,
+    same_site="strict",
     hdrs=(Link(rel="stylesheet", href="/style.css"),),
 )
 
@@ -51,12 +55,33 @@ job_slots = asyncio.Semaphore(MAX_JOBS)
 # ------------------------------------------
 # Input page
 # ------------------------------------------
+# ------------------------------------------
+# CSRF protection
+# ------------------------------------------
+# Every visitor gets a random token, kept in their signed session cookie. The page gives it to htmx, which sends it
+# with the form in the X-CSRF-Token header. /run only accepts a form whose header matches the cookie, so another
+# website cannot make a visitor's browser send data to /run behind their back.
+CSRF_HEADER = "X-CSRF-Token"
+
+
+def csrf_token(session):
+    if "csrf" not in session:
+        session["csrf"] = secrets.token_urlsafe(32)
+    return session["csrf"]
+
+
+def csrf_ok(req):
+    expected = req.session.get("csrf", "")
+    sent = req.headers.get(CSRF_HEADER, "")
+    return bool(expected) and secrets.compare_digest(sent, expected)
+
+
 def choice(name, value, text, checked=False):
     return Label(Input(type="radio", name=name, value=value, checked=checked), text)
 
 
 @rt('/', methods=['GET'])
-def get():
+def get(session):
     # guide.md is plain Markdown: edit it like a README. The browser turns it into formatted text (MarkdownJS),
     # so no extra Python package is needed. The file is read on every visit, so an edit shows at once.
     guide_text = GUIDE_FILE.read_text(encoding="utf-8") if GUIDE_FILE.is_file() else "The guide is not written yet."
@@ -83,7 +108,8 @@ def get():
             H2("Input SDD or SDR files"),
             P("Upload or paste Standard for DNA Damage (SDD) or Standard for DNA Repair (SDR) data to see one karyogram "
               f"per cell, and download the summary file. Limit: {MAX_INPUT_MB} MB.", cls="lead"),
-            Form(hx_post="/run", hx_target="#result", hx_disabled_elt="find button", hx_indicator="#busy")(
+            Form(hx_post="/run", hx_target="#result", hx_disabled_elt="find button", hx_indicator="#busy",
+                 hx_headers=json.dumps({CSRF_HEADER: csrf_token(session)}))(
                 Div(
                     Fieldset(Legend("File type"),
                              choice("input_file_type", "sdr", "SDR (mutations)", checked=True),
@@ -126,6 +152,9 @@ def site_footer():
 @rt('/run', methods=['POST'])
 async def run(req):
     """Runs karyoke on the uploaded or pasted data and returns the result box shown under the form."""
+    if not csrf_ok(req):
+        return error_box("This page has expired. Please reload it (F5) and try again.")
+
     if int(req.headers.get("content-length", "0")) > MAX_INPUT_BYTES:
         return error_box(f"The data is larger than the {MAX_INPUT_MB} MB limit of this website. "
                          "Use the karyoke program on your own computer for files this big.")
