@@ -24,6 +24,12 @@ AUTHOR = "Samy Boutros"
 LAB_NAME = "Kildea Lab"
 LAB_URL = "https://kildealab.com"
 GITHUB_URL = "https://github.com/kildealab/KaryoKE"
+# Funder logos in the footer: (file in static/funders/, name shown to screen readers and on hover)
+FUNDERS = [
+    ("nserc.png", "Natural Sciences and Engineering Research Council of Canada (NSERC)"),
+    ("frq.png", "Fonds de recherche du Québec"),
+    ("msss.png", "Ministère de la Santé et des Services sociaux du Québec"),
+]
 GUIDE_FILE = BASE_DIR / "guide.md"                 # The "How to use" section, written in Markdown
 
 
@@ -141,7 +147,13 @@ def get(session):
 def site_footer():
     """Links at the bottom of the page."""
     return Footer(
-        A("GitHub", href=GITHUB_URL, target="_blank", rel="noopener"),
+        Div(A("GitHub", href=GITHUB_URL, target="_blank", rel="noopener"), cls="footer-links"),
+        Div(
+            Small("Funded by"),
+            Div(*[Img(src=f"/funders/{file}", alt=name, title=name, height="50") for file, name in FUNDERS],
+                cls="funder-logos"),
+            cls="funders",
+        ),
         cls="site-footer",
     )
 
