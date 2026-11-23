@@ -46,10 +46,15 @@ Select previous or next to scroll through each cell or select the dropdown list 
 and 100% to zoom in to 100% zoom (maximum 600% zoom).
 
   ![Zoom](/images_how_to/zoom.png)
-- Clicking a chromosome: Click on the chromosome label to see a summary of the damage types or the mutation types and
+- Clicking a chromosome label: To see a summary of the damage types or the mutation types and
 number of each drawn on each homolog of the chromosomes. 
 
   ![Chromosome labels](/images_how_to/chr_label.png)
+
+- Clicking a homolog of a chromosome: To see a zoomed in view of the damage or mutations on a given homlog and where exactly the mutations occur. 
+Up to 1 bp resolution if desired. Hover over chromosome regions to view details of damage/mutations.
+
+  ![Chromosome Homolog](/images_how_to/click_homolog.png)
 - Downloads: Top right of the karyogram viewer in the upper tool bar.
 Download each karyogram as a PNG or SVG, or all of them at once as a .zip file.
 
