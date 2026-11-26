@@ -56,10 +56,12 @@ Up to 1 bp resolution if desired. Hover over chromosome regions to view details 
 
   ![Damaged chromosome homolog](/images_how_to/homolog_detail_damage.png)
   ![Mutation chromosome homolog](/images_how_to/homolog_detail_mutation.png)
-- Downloads: Top right of the karyogram viewer in the upper tool bar.
+- Downloads: Top right of the karyogram viewer in the upper tool bar and top right of the upper tool bar in the detailed per-chromosome view.
 Download each karyogram as a PNG or SVG, or all of them at once as a .zip file.
 
-  ![Downloads](/images_how_to/dwnld_image.png)
+
+  ![Downloads Whole Karyogram](/images_how_to/dwnld_image.png)
+  ![Downloads Detailed Chromosome View](/images_how_to/dwnld_detail.png)
 
 ### Limits and privacy
 
