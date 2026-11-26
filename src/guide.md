@@ -8,7 +8,7 @@
   ![Zoom](/images_how_to/zoom.png)   <- the address always ends in .png (or .jpg/.gif/.svg) and leaves out "static"
 -->
 
-KaryoKE - Karyograms for Karyotype<sup><a id="cite-1" href="#ref-1">[1]</a></sup> Errors is a C++ program that draws one karyogram per cell from 
+KaryoKE - Karyograms for Karyotype Errors<sup><a id="cite-1" href="#ref-1">[1]</a></sup> is a C++ program that draws one karyogram per cell from 
 Standard for DNA Damage (SDD)<sup><a id="cite-2" href="#ref-2">[2]</a></sup> or Standard for DNA Repair (SDR)<sup><a id="cite-3" href="#ref-3">[3]</a></sup> 
 data, so you can see at a glance which chromosomes are damaged or mutated.
 
