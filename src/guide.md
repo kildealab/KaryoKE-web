@@ -42,10 +42,14 @@ data, so you can see at a glance which chromosomes are damaged or mutated.
 Select previous or next to scroll through each cell or select the dropdown list to choose a specific cell.
 
   ![Switching cells](/images_how_to/cell_switch.png)
-- Zooming in and out: Click - to zoom out, + to zoom in, Fit to fit the entire karyogram to the height of the page,
+- Zooming in and out on the whole Karyogram: Click - to zoom out, + to zoom in (or scroll), Fit to fit the entire karyogram to the height of the page,
 and 100% to zoom in to 100% zoom (maximum 600% zoom).
 
   ![Zoom](/images_how_to/zoom.png)
+- Zooming in and out on the detailed per-chromosome view: Click - to zoom out, + to zoom in (or scroll in and out) and Whole Homolog to fit
+the homolog to the window.
+
+  ![Zoom Detail](/images_how_to/zoom_detail.png)
 - Clicking a chromosome label: To see a summary of the damage types or the mutation types and
 number of each drawn on each homolog of the chromosomes. 
 
